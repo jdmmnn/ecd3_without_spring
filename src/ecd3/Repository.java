@@ -1,5 +1,8 @@
 package ecd3;
 
+import service_setup.Person;
+import service_setup.ThreadLocalProvider;
+
 import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
@@ -9,18 +12,27 @@ public abstract class Repository<E extends Aggregate<?>, F extends Serializable>
 
     public abstract Map<Version<F>, E> multiVersionPersistence();
 
-    public abstract Map<F, E> persistence();
+    public abstract List<E> persistence();
 
     public abstract F getId(E aggregate);
 
     public void save(E aggregate) {
-        persistence().put(getId(aggregate), aggregate);
-        aggregate.incrementVersion();
+//        System.out.println("Saving aggregate: " + aggregate);
+//        System.out.println("Aggregate ID: " + getId(aggregate));
+//        System.out.println("Repository ID: " + System.identityHashCode(this));
+//        System.out.println("Persistence ID: " + System.identityHashCode(persistence()));
+        if (!persistence().contains(aggregate)) {
+            persistence().add(aggregate);
+        }
+        int replicaId = ThreadLocalProvider.getReplicaId();
         multiVersionPersistence().put(new Version<F>(getId(aggregate), aggregate.getVersion()), CopyUtil.deepCopy(aggregate));
     }
 
-    public E find(F id) {
-        E aggregate = persistence().get(id);
+    public E findById(F id) {
+//        System.out.println("Finding aggregate by ID: " + id);
+//        System.out.println("Repository ID: " + System.identityHashCode(this));
+//        System.out.println("Persistence ID: " + System.identityHashCode(persistence()));
+        E aggregate = persistence().stream().filter(e -> getId(e).equals(id)).findFirst().orElse(null);
         if (aggregate == null) {
             throw new NoSuchElementException();
         }
@@ -41,16 +53,18 @@ public abstract class Repository<E extends Aggregate<?>, F extends Serializable>
     }
 
     public void update(E aggregate) {
+//        System.out.println("Updating aggregate: " + aggregate);
+//        System.out.println("Aggregate ID: " + getId(aggregate));
+//        System.out.println("Repository ID: " + System.identityHashCode(this));
         aggregate.incrementVersion();
         multiVersionPersistence().put(new Version<F>(getId(aggregate), aggregate.getVersion()), CopyUtil.deepCopy(aggregate));
     }
 
     public void rollbackTo(E deepCopyOfOldVersionOfAggregate, int version) {
         deepCopyOfOldVersionOfAggregate.setVersion(version);
-        persistence().put(getId(deepCopyOfOldVersionOfAggregate), deepCopyOfOldVersionOfAggregate);
+        persistence().add(deepCopyOfOldVersionOfAggregate);
         multiVersionPersistence().keySet().removeIf(key -> key.getAggregateId().equals(getId(deepCopyOfOldVersionOfAggregate)) && key.getVersion() > version);
     }
-
 
     public static class Version<F> {
         private final F aggregateId;

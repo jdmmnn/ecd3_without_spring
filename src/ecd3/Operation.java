@@ -1,6 +1,8 @@
 package ecd3;
 
-public class Operation {
+import java.io.Serializable;
+
+public class Operation implements Serializable {
     String aggregateName;
     String methodName;
     Object[] args;

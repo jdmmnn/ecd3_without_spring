@@ -1,8 +1,13 @@
 package ecd3;
 
+import service_setup.Person;
+import service_setup.PersonRepo;
+import service_setup.ThreadLocalProvider;
+
+import java.io.Serializable;
 import java.time.Instant;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class TransactionImpl implements Transaction {
 
@@ -10,16 +15,21 @@ public class TransactionImpl implements Transaction {
     int replicaId;
     Long botTimeStamp;
     Long commitTimeStamp;
-    Snapshot botSnapshot;
+    Snapshot botSnapshot; // TODO: snapshots DO NOT WORK!!! currently. Need to fix this.
     Snapshot commitSnapshot;
-    Set<Aggregate<?>> readSet;
-    Set<Aggregate<?>> writeSet;
-    List<Operation> operations;
+    Set<Aggregate<?>> readSet = new HashSet<>();
+    Set<Aggregate<?>> writeSet = new HashSet<>();
+    List<Operation> operations = new ArrayList<>();
+
+    public TransactionImpl() {
+        this.id = ThreadLocalProvider.getTransactionId().getAndIncrement();
+        this.replicaId = ThreadLocalProvider.getReplicaId();
+    }
 
     @Override
     public void begin() {
         botTimeStamp = Instant.now().toEpochMilli();
-        botSnapshot = new SnapshotImpl(writeSet);
+        //botSnapshot = new SnapshotImpl(writeSet);
     }
 
     @Override
@@ -29,13 +39,9 @@ public class TransactionImpl implements Transaction {
     }
 
     @Override
-    @SuppressWarnings("unchecked")
     public void rollback() {
-        botSnapshot.get().forEach(aggregate -> {
-            RepositoryManager.getInstance().getRepository(aggregate.getClass()).rollbackTo(aggregate, aggregate.getVersion());
-        });
+        botSnapshot.get().forEach(aggregate -> ThreadLocalProvider.getPersonRepo().get().rollbackTo((Person) aggregate, aggregate.getVersion()));
     }
-
 
     @Override
     public void logUpdateOperation(String aggregateName, String aggregateId, Object... parameters) {
@@ -87,5 +93,14 @@ public class TransactionImpl implements Transaction {
 
     public List<Operation> getOperations() {
         return operations;
+    }
+
+    @Override
+    public String toString() {
+        return "TransactionImpl{" +
+                "replicaId=" + replicaId +
+                ", id=" + id +
+                ", operations=" + operations.getFirst().args.toString() +
+                '}';
     }
 }

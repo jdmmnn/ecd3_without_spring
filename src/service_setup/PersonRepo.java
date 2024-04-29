@@ -12,18 +12,17 @@ import java.util.Map;
 
 public class PersonRepo extends Repository<Person, String> {
 
-    {
-        RepositoryManager.getInstance().<Person, String>registerRepository(Person.class, this);
-    }
+    private final Map<Version<String>, Person> multiVersionPersistence = new HashMap<>();
+    private final List<Person> persistence = new ArrayList<>();
 
     @Override
     public Map<Version<String>, Person> multiVersionPersistence() {
-        return new HashMap<>();
+        return multiVersionPersistence;
     }
 
     @Override
-    public Map<String, Person> persistence() {
-        return new HashMap<>();
+    public List<Person> persistence() {
+        return persistence;
     }
 
     @Override

@@ -5,7 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class RepositoryManager {
-    private static RepositoryManager instance;
+    /*private static RepositoryManager instance;
     private final Map<Class<? extends Aggregate<?>>, Repository<?, ?>> repositories = new HashMap<>();
 
     private RepositoryManager() {}
@@ -24,5 +24,5 @@ public class RepositoryManager {
     @SuppressWarnings("unchecked")
     public <A extends Aggregate<A>, I extends Serializable> Repository<A, I> getRepository(Class<A> aggregateClass) {
         return (Repository<A, I>) repositories.get(aggregateClass);
-    }
+    }*/
 }

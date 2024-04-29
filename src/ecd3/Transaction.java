@@ -1,8 +1,10 @@
 package ecd3;
 
+import java.io.Serializable;
+import java.util.List;
 import java.util.Set;
 
-public interface Transaction {
+public interface Transaction extends Serializable {
 
     void begin();
 
@@ -18,9 +20,11 @@ public interface Transaction {
 
     Long getCommitTimeStamp();
 
-    Snapshot getCommitSnapshot();
-
     Set<Aggregate<?>> getWriteSet();
 
     Set<Aggregate<?>> getReadSet();
+
+    List<Operation> getOperations();
+
+    int getReplicaId();
 }

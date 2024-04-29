@@ -1,11 +1,15 @@
 package ecd3;
 
+import service_setup.PersonRepo;
+
 public interface TransactionManager {
         public Transaction getRunningTransaction();
 
-        void bot();
+        Transaction bot();
 
-        void commit();
+        void commit(Transaction transaction);
 
-        void abort();
+        void rollback(Transaction transaction);
+
+        void consumeBuffer();
 }
