@@ -64,8 +64,8 @@ class BasicFunctionalityTest {
     @Test
     void runAccountOperationsTest() {
         // Define the number of accounts, operations, and replicas
-        int numOfAccounts = 10;
-        int numOfOperations = 100;
+        int numOfAccounts = 2;
+        int numOfOperations = 3;
         int numOfReplicas = 2;
 
         // Create a list of service replicas

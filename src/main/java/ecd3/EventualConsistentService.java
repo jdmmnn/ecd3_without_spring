@@ -1,19 +1,14 @@
 package ecd3;
 
+import ecd3.Repository.Version;
 import ecd3.domain.Operation;
 import java.time.Instant;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.concurrent.PriorityBlockingQueue;
-import java.util.stream.Stream;
 import service_setup.Account;
 import service_setup.AccountRepo;
+import service_setup.InsufficientFundsException;
+import service_setup.NoAccountFoundException;
 import service_setup.ThreadLocalProvider;
 
 public class EventualConsistentService {
@@ -43,7 +38,15 @@ public class EventualConsistentService {
      */
     public void evaluateTransactionTail() {
         transactionTail.forEach(transaction -> {
-            transaction.getOperations().forEach(this::evalOperation);
+            transaction.getOperations().forEach(e -> {
+                try {
+                    evalOperation(e);
+                } catch (InsufficientFundsException | NoAccountFoundException | AccountAllReadyExistsException ex) {
+                    throw new RuntimeException(ex);
+                } finally {
+                    transaction.rollback();
+                }
+            });
             if (transaction.getCommitTimeStamp() < Instant.now().toEpochMilli() - TRANSACTION_TAIL_REMAIN_TIME) {
                 transactionTail.remove(transaction);
                 transactionLog.add(transaction);
@@ -51,7 +54,7 @@ public class EventualConsistentService {
         });
     }
 
-    public void evalOperation(Operation e) {
+    public void evalOperation(Operation e) throws InsufficientFundsException, NoAccountFoundException, AccountAllReadyExistsException {
         switch (e.cud) {
             case CREATE -> create(e);
             case UPDATE -> update(e);
@@ -61,10 +64,12 @@ public class EventualConsistentService {
         }
     }
 
-    private void create(Operation e) {
-        for (Object arg : e.args) {
-            repo.save((Account) arg);
+    private void create(Operation e) throws AccountAllReadyExistsException {
+        Account account = (Account) e.args[0];
+        if (repo.persistence().containsKey(account.getName())) {
+            throw new AccountAllReadyExistsException("Account with name " + account.getName() + " already exists");
         }
+        repo.save(account);
     }
 
     private void update(Operation e) {
@@ -73,21 +78,34 @@ public class EventualConsistentService {
         }
     }
 
-    private void delete(Operation e) {
-        for (Object arg : e.args) {
-            repo.delete((Account) arg);
+    private void delete(Operation e) throws NoAccountFoundException {
+        Account account = (Account) e.args[0];
+        repo.findByName(account.getName()).orElseThrow(() -> new NoAccountFoundException(account.getName() + " in " + repo.persistence()));
+        repo.delete(account);
+    }
+
+    private void withdraw(Operation e) throws InsufficientFundsException, NoAccountFoundException {
+        Account account = (Account) e.args[0];
+        double amount = (double) e.args[1];
+        Account foundAccount = repo.findByName(account.getName())
+                .orElseThrow(() -> new NoAccountFoundException(account.getName() + " in " + repo.persistence()));
+        if (foundAccount.getBalance() < amount) {
+            throw new InsufficientFundsException("Insufficient funds");
+        } else {
+            foundAccount.setBalance(foundAccount.getBalance() - amount);
+            if (!repo.multiVersionPersistence().containsKey(new Version<String>(foundAccount.id, foundAccount.getVersion()))) {
+                repo.update(foundAccount);
+            }
         }
     }
 
-    private void withdraw(Operation e) {
-        for (Object arg : e.args) {
-            repo.update((Account) arg);
-        }
-    }
-
-    private void deposit(Operation e) {
-        for (Object arg : e.args) {
-            repo.update((Account) arg);
+    private void deposit(Operation e) throws NoAccountFoundException {
+        Account account = (Account) e.args[0];
+        double amount = (double) e.args[1];
+        repo.findByName(account.getName()).orElseThrow(() -> new NoAccountFoundException(account.getName() + " in " + repo.persistence()));
+        if (!repo.multiVersionPersistence().containsKey(new Version<String>(account.id, account.getVersion()))) {
+            account.setBalance(account.getBalance() + amount);
+            repo.update(account);
         }
     }
 

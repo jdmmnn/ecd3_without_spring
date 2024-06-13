@@ -13,7 +13,7 @@ public interface Transaction extends Serializable {
 
     void commit();
 
-    void rollback(Long replicaId);
+    void rollback();
 
     void logOperation(String aggregateName, String aggregateId, OperationEnum operation, Object... parameters);
 

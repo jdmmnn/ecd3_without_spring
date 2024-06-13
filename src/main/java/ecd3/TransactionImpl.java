@@ -39,8 +39,8 @@ public class TransactionImpl implements Transaction {
     }
 
     @Override
-    public void rollback(Long replicaId) {
-        botSnapshot.get().forEach(aggregate -> ThreadLocalProvider.getAccountRepo(replicaId).rollbackTo((Account) aggregate, aggregate.getVersion()));
+    public void rollback() {
+        //botSnapshot.get().forEach(aggregate -> ThreadLocalProvider.getAccountRepo().rollbackTo((Account) aggregate, aggregate.getVersion()));
     }
 
     @Override

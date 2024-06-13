@@ -19,6 +19,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class ThreadLocalProvider {
 
     private static final boolean benchmark = true;
+    public static final boolean randomExceptions = true;
 
     private static final AtomicInteger transactionId = new AtomicInteger(0);
 

@@ -44,8 +44,7 @@ public class AccountService {
         account.logReadOperation(transaction);
         if (account.getBalance() < amount)
             throw new InsufficientFundsException("Insufficient funds");
-        account.setBalance(account.getBalance() - amount);
-        account.logOperation(transaction, OperationEnum.WITHDRAW, account);
+        account.logOperation(transaction, OperationEnum.WITHDRAW, account, amount);
         ThreadLocalProvider.log(ThreadLocalProvider.getReplicaId(),
                 account.getReplicaId(),
                 account.getId(),
@@ -59,8 +58,7 @@ public class AccountService {
     public void depositMoney(String name, double amount) throws NoAccountFoundException {
         Transaction transaction = transactionManager.bot();
         Account account = accountRepo.findByName(name).orElseThrow(() -> new NoAccountFoundException(name + " in " + accountRepo.persistence()));        account.logReadOperation(transaction);
-        account.setBalance(account.getBalance() + amount);
-        account.logOperation(transaction, OperationEnum.DEPOSIT, account);
+        account.logOperation(transaction, OperationEnum.DEPOSIT, account, amount);
         ThreadLocalProvider.log(ThreadLocalProvider.getReplicaId(),
                 account.getReplicaId(),
                 account.getId(),

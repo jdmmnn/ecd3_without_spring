@@ -14,6 +14,8 @@ import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
+import service_setup.InsufficientFundsException;
+import service_setup.NoAccountFoundException;
 import service_setup.ThreadLocalProvider;
 
 public class TransactionManagerImpl implements TransactionManager {
@@ -60,7 +62,13 @@ public class TransactionManagerImpl implements TransactionManager {
             // TODO: maybe include a check for the transaction to be the running transaction
             transaction.commit();
             transaction.getOperations().forEach(operation -> {
-                eventualConsistentService.evalOperation(operation);
+                try {
+                    eventualConsistentService.evalOperation(operation);
+                } catch (InsufficientFundsException | NoAccountFoundException | AccountAllReadyExistsException e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    transaction.rollback();
+                }
             });
             eventualConsistentService.addTransactionToTail(transaction);
             MessageBuffer.broadcast(replicaId, transaction);
@@ -74,7 +82,7 @@ public class TransactionManagerImpl implements TransactionManager {
     public void rollback(Transaction transaction) {
         lock.lock();
         try {
-            transaction.rollback(replicaId);
+            transaction.rollback();
             runningTransaction = null;
         } finally {
             lock.unlock();
@@ -90,18 +98,17 @@ public class TransactionManagerImpl implements TransactionManager {
             Transaction transaction = deque.poll();
             if (transaction != null) {
                 eventualConsistentService.addTransactionToTail(transaction);
-                transaction.getOperations().forEach(eventualConsistentService::evalOperation);
+                transaction.getOperations().forEach(e -> {
+                    try {
+                        eventualConsistentService.evalOperation(e);
+                    } catch (InsufficientFundsException | NoAccountFoundException | AccountAllReadyExistsException ex) {
+                        throw new RuntimeException(ex);
+                    } finally {
+                        transaction.rollback();
+                    }
+                });
             }
         }
-//        Transaction transaction = deque.poll();
-//        if (transaction != null) {
-//            eventualConsistentService.addTransactionToTail(transaction);
-//            transaction.getOperations().forEach(operation -> {
-//                eventualConsistentService.evalOperation(operation);
-//            });
-//            return true;
-//        }
-        //eventualConsistentService.evaluateTransactionTail();
         return true;
     }
 }
