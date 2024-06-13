@@ -17,9 +17,8 @@ public class WithdrawMoney implements Task {
     @Override
     public void execute(AccountService accountService) {
         try {
-            Thread.sleep(100);
             accountService.withdrawMoney(name, amount);
-        } catch (InsufficientFundsException | NoAccountFoundException | InterruptedException e) {
+        } catch (InsufficientFundsException | NoAccountFoundException e) {
             throw new RuntimeException(e);
         }
     }

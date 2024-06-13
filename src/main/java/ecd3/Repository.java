@@ -23,7 +23,7 @@ public abstract class Repository<E extends Aggregate<?>, F extends Serializable>
     public abstract F getName(E aggregate);
 
     public void save(E aggregate) {
-        persistence().put(getName(aggregate), aggregate);
+        persistence().put(getName(aggregate), CopyUtil.deepCopy(aggregate));
         multiVersionPersistence().put(new Version<F>(getId(aggregate), aggregate.getVersion()), CopyUtil.deepCopy(aggregate));
     }
 
@@ -49,8 +49,9 @@ public abstract class Repository<E extends Aggregate<?>, F extends Serializable>
     }
 
     public void update(E aggregate) {
-        save(aggregate);
+        persistence().put(getName(aggregate), CopyUtil.deepCopy(aggregate));
         aggregate.incrementVersion();
+        multiVersionPersistence().put(new Version<F>(getId(aggregate), aggregate.getVersion()), CopyUtil.deepCopy(aggregate));
     }
 
     public void rollbackTo(E deepCopyOfOldVersionOfAggregate, int version) {

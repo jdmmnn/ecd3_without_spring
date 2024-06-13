@@ -93,9 +93,7 @@ public class EventualConsistentService {
             throw new InsufficientFundsException("Insufficient funds");
         } else {
             foundAccount.setBalance(foundAccount.getBalance() - amount);
-            if (!repo.multiVersionPersistence().containsKey(new Version<String>(foundAccount.id, foundAccount.getVersion()))) {
-                repo.update(foundAccount);
-            }
+            repo.update(foundAccount);
         }
     }
 
@@ -103,10 +101,9 @@ public class EventualConsistentService {
         Account account = (Account) e.args[0];
         double amount = (double) e.args[1];
         repo.findByName(account.getName()).orElseThrow(() -> new NoAccountFoundException(account.getName() + " in " + repo.persistence()));
-        if (!repo.multiVersionPersistence().containsKey(new Version<String>(account.id, account.getVersion()))) {
-            account.setBalance(account.getBalance() + amount);
-            repo.update(account);
-        }
+        account.setBalance(account.getBalance() + amount);
+        repo.update(account);
+
     }
 
     public void addTransactionToTail(Transaction transaction) {

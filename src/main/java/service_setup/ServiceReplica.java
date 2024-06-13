@@ -40,11 +40,6 @@ public class ServiceReplica extends Thread {
         );
         synchronisationWorker.start();
 
-        EventualConsistentWorker eventualConsistentWorker = new EventualConsistentWorker(
-                "EventualReplica" + this.getName(),
-                replicaId
-        );
-        //eventualConsistentWorker.start();
         try {
             sleep(100);
         } catch (InterruptedException e) {
@@ -63,12 +58,5 @@ public class ServiceReplica extends Thread {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-//        while (!transactionTail.isEmpty()){
-//            try {
-//                sleep(100);
-//            } catch (InterruptedException e) {
-//                throw new RuntimeException(e);
-//            }
-//        }
     }
 }

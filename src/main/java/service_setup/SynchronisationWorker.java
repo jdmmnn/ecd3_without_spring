@@ -33,13 +33,13 @@ public class SynchronisationWorker extends Thread {
         while ((serviceReplica.isRunning() && !transactionTail.isEmpty()) || (serviceReplica.isRunning() && count < 1000)) {
             if (!transactionManager.consumeBuffer(accountRepo, buffer, replicaId)) {
                 count++;
-                try {
-                    sleep(100);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
             } else {
                 count = 0;
+            }
+            try {
+                sleep(100);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
         }
     }

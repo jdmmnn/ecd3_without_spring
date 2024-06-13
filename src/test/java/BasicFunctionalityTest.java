@@ -64,8 +64,8 @@ class BasicFunctionalityTest {
     @Test
     void runAccountOperationsTest() {
         // Define the number of accounts, operations, and replicas
-        int numOfAccounts = 2;
-        int numOfOperations = 3;
+        int numOfAccounts = 10;
+        int numOfOperations = 100;
         int numOfReplicas = 2;
 
         // Create a list of service replicas
@@ -209,6 +209,7 @@ class BasicFunctionalityTest {
             taskQueue.add(new CreateAccount(
                     getAccount(replicaNumber, i, 0).getName(), getAccount(replicaNumber, i, 0).getBalance(), getSimulatedDelay()
             ));
+            taskQueue.add(new Sleep(100));
         }
         int i = numOfReplicas * numOfPersons;
         for (int i1 = 0; i1 < i; i1++) {
