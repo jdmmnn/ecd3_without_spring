@@ -1,0 +1,6 @@
+rootProject.name = 'ECD3-Evaluation-Project'
+include 'jhm'
+include 'src:jhm'
+findProject(':src:jhm')?.name = 'jhm'
+include 'jhm'
+
