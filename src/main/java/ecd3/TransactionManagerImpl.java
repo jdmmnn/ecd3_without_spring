@@ -1,39 +1,33 @@
 package ecd3;
 
-import static service_setup.ThreadLocalProvider.getTransactionLog;
-
-import ecd3.domain.Aggregate;
 import ecd3.propa.MessageBuffer;
-import ecd3.util.CopyUtil;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.PriorityBlockingQueue;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingDeque;
 import service_setup.AccountRepo;
 
-import java.util.*;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.stream.Collectors;
-import service_setup.InsufficientFundsException;
-import service_setup.NoAccountFoundException;
 import service_setup.ThreadLocalProvider;
 
 public class TransactionManagerImpl implements TransactionManager {
 
     private final Long replicaId;
 
-    ConcurrentLinkedDeque<Transaction> transactionLog;
     Transaction runningTransaction;
     public EventualConsistentService eventualConsistentService;
+    private BlockingDeque<Transaction> buffer;
+    List<Instant> bufferTimeStamp = new ArrayList<>();
 
     private final ReentrantLock lock;
 
     public TransactionManagerImpl(
             Long replicaId) {
         this.replicaId = replicaId;
-        this.transactionLog = getTransactionLog(replicaId);
         this.lock = new ReentrantLock();
         this.eventualConsistentService = ThreadLocalProvider.getEventualConsistentService(replicaId);
+        this.buffer = MessageBuffer.registerOrGet(replicaId);
     }
 
     @Override
@@ -46,8 +40,8 @@ public class TransactionManagerImpl implements TransactionManager {
     public Transaction bot() {
         lock.lock();
         try {
-            Transaction transaction = new TransactionImpl();
-            transaction.begin();
+            Transaction transaction = new TransactionImpl(replicaId);
+            transaction.begin(ThreadLocalProvider.getAccountRepo(replicaId).getSnapshotVersions());
             runningTransaction = transaction;
             return transaction;
         } finally {
@@ -60,17 +54,8 @@ public class TransactionManagerImpl implements TransactionManager {
         lock.lock();
         try {
             // TODO: maybe include a check for the transaction to be the running transaction
-            transaction.commit();
-            transaction.getOperations().forEach(operation -> {
-                try {
-                    eventualConsistentService.evalOperation(operation);
-                } catch (InsufficientFundsException | NoAccountFoundException | AccountAllReadyExistsException e) {
-                    throw new RuntimeException(e);
-                } finally {
-                    transaction.rollback();
-                }
-            });
-            eventualConsistentService.addTransactionToTail(transaction);
+            transaction.commit(eventualConsistentService.repo.getSnapshotVersions());
+//            eventualConsistentService.addTransactionToTail(transaction);
             MessageBuffer.broadcast(replicaId, transaction);
             runningTransaction = null;
         } finally {
@@ -80,35 +65,33 @@ public class TransactionManagerImpl implements TransactionManager {
 
     @Override
     public void rollback(Transaction transaction) {
-        lock.lock();
-        try {
-            transaction.rollback();
-            runningTransaction = null;
-        } finally {
-            lock.unlock();
-        }
+//        lock.lock();
+//        try {
+//            transaction.rollback();
+//            runningTransaction = null;
+//        } finally {
+//            lock.unlock();
+//        }
     }
 
     @Override
-    public boolean consumeBuffer(AccountRepo repository, ConcurrentLinkedQueue<Transaction> deque, long replicaId) {
-        if (deque.isEmpty()) {
-            return false;
-        }
-        while (!deque.isEmpty()) {
-            Transaction transaction = deque.poll();
-            if (transaction != null) {
+    public boolean consumeBuffer() {
+        try {
+            Transaction transaction = buffer.take();
+            if (transaction.isRollback()) {
+                eventualConsistentService.rollback(transaction);
+            } else {
                 eventualConsistentService.addTransactionToTail(transaction);
-                transaction.getOperations().forEach(e -> {
-                    try {
-                        eventualConsistentService.evalOperation(e);
-                    } catch (InsufficientFundsException | NoAccountFoundException | AccountAllReadyExistsException ex) {
-                        throw new RuntimeException(ex);
-                    } finally {
-                        transaction.rollback();
-                    }
-                });
             }
+        } catch (InterruptedException | CanNotRollBackException e) {
+            throw new RuntimeException(e);
         }
         return true;
+    }
+
+    @Override
+    public boolean consumeBuffer(AccountRepo repository, ConcurrentLinkedQueue<Transaction> deque, long replicaId)
+            throws CanNotRollBackException {
+        return false;
     }
 }

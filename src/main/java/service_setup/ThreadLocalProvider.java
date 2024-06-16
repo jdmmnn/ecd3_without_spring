@@ -13,7 +13,6 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListSet;
-import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ThreadLocalProvider {
@@ -28,10 +27,11 @@ public class ThreadLocalProvider {
     private static final Map<Long, AccountRepo> personRepos = new ConcurrentHashMap<>();
     private static final Map<Long, AccountService> personServices = new ConcurrentHashMap<>();
     private static final Map<Long, TransactionManager> transactionManagers = new ConcurrentHashMap<>();
-    private static final Map<Long, ConcurrentLinkedDeque<Transaction>> transactionLogs = new ConcurrentHashMap<>();
-    private static final Map<Long, ConcurrentSkipListSet<Transaction>> transactionTails = new ConcurrentHashMap<>();
     private static final Map<Long, ServiceReplica> replicaThreads = new ConcurrentHashMap<>();
     private static final Map<Long, EventualConsistentService> eventualConsistentServices = new ConcurrentHashMap<>();
+    private static final Map<Long, Long> threadIdReplicaIdMap = new ConcurrentHashMap<>();
+    private static final Map<Long, ConcurrentLinkedDeque<Transaction>> transactionLogs = new ConcurrentHashMap<>();
+    private static final Map<Long, ConcurrentSkipListSet<Transaction>> transactionTails = new ConcurrentHashMap<>();
 
     private static final ThreadLocal<Integer> replicaId = ThreadLocal.withInitial(uniqueId::getAndIncrement);
 
@@ -43,7 +43,27 @@ public class ThreadLocalProvider {
     }
 
     public static ConcurrentSkipListSet<Transaction> getTransactionTail(Long replicaId) {
-        return transactionTails.computeIfAbsent(replicaId, k -> new ConcurrentSkipListSet<>(Comparator.comparingLong(Transaction::getCommitTimeStamp)));
+        return transactionTails.computeIfAbsent(replicaId, k -> new ConcurrentSkipListSet<>(new TransactionComparator()));
+    }
+
+    public static void registerReplicaIdWithThread(long replicaId, Thread serviceReplica) {
+        threadIdReplicaIdMap.put(serviceReplica.threadId(), replicaId);
+    }
+
+    public static Long getReplicaIdByThread(Thread thread) {
+        return threadIdReplicaIdMap.get(thread.threadId());
+    }
+
+    public static void reset() {
+
+        personRepos.clear();
+        personServices.clear();
+        transactionManagers.clear();
+        replicaThreads.clear();
+        eventualConsistentServices.clear();
+        threadIdReplicaIdMap.clear();
+        transactionLogs.clear();
+        transactionTails.clear();
     }
 
     public record LogEntry(long workerReplicaId, int producerReplicaId, String aggregateId, int transactionId, OperationEnum operation,
@@ -94,4 +114,12 @@ public class ThreadLocalProvider {
         }
     }
 
+
+    public static class TransactionComparator implements Comparator<Transaction> {
+
+        @Override
+        public int compare(Transaction o1, Transaction o2) {
+            return o1.getCommitTimeStamp().compareTo(o2.getCommitTimeStamp());
+        }
+    }
 }

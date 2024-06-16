@@ -1,6 +1,5 @@
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasItems;
 import static org.hamcrest.Matchers.in;
@@ -11,28 +10,41 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
+import java.util.stream.Stream;
+import org.hamcrest.Description;
+import org.hamcrest.TypeSafeMatcher;
 import org.junit.jupiter.api.Test;
-import service_setup.AccountRepo;
 import service_setup.ThreadLocalProvider;
 import service_setup.testing.CreateAccount;
 import service_setup.Account;
 import service_setup.ServiceReplica;
 import service_setup.testing.DepositMoney;
+import service_setup.testing.End;
 import service_setup.testing.Sleep;
 import service_setup.testing.Task;
+import service_setup.testing.Transaction;
 import service_setup.testing.WithdrawMoney;
 
 class BasicFunctionalityTest {
+
+
+    void testSetup(List<ServiceReplica> serviceReplicas, List<Account> expectedResults) {
+        serviceReplicas.forEach(Thread::start);
+
+
+    }
+
 
     @Test
     void runBenchmark() {
@@ -57,15 +69,15 @@ class BasicFunctionalityTest {
     // run one isolated benchnark with 5 replicas and 100 persons
     @Test
     void runIsolatedBenchmark() {
-        long benchmark = benchmark(2, 2);
+        long benchmark = benchmark(10, 20);
         System.out.println("Benchmark took " + benchmark + " seconds");
     }
 
     @Test
     void runAccountOperationsTest() {
         // Define the number of accounts, operations, and replicas
-        int numOfAccounts = 10;
-        int numOfOperations = 100;
+        int numOfAccounts = 2;
+        int numOfOperations = 10;
         int numOfReplicas = 2;
 
         // Create a list of service replicas
@@ -77,16 +89,21 @@ class BasicFunctionalityTest {
             for (int j = 0; j < numOfAccounts; j++) {
                 Account account = getAccount(i, j, 0);
                 taskQueue.add(new CreateAccount(account.getName(), account.getBalance(), getSimulatedDelay()));
-                taskQueue.add(new Sleep(1000));
-                taskQueue.add(new Sleep(100));
+                taskQueue.add(new Sleep(10));
                 for (int k = 0; k < numOfOperations; k++) {
                     taskQueue.add(new DepositMoney(account.getName(), 100));
+                    taskQueue.add(new Sleep(10));
                     taskQueue.add(new WithdrawMoney(account.getName(), 50));
                 }
             }
+            taskQueue.add(new End());
 
             // Create a service replica with the task queue
-            return new ServiceReplica(String.valueOf(i), taskQueue);
+            ServiceReplica serviceReplica = new ServiceReplica(String.valueOf(i), taskQueue);
+//            for (int i1 = 0; i1 < numOfAccounts; i1++) {
+//                serviceReplica.accountRepo.save(getAccount(serviceReplica.replicaId, i1, 0));
+//            }
+            return serviceReplica;
         }).toList();
 
         // Start the service replicas
@@ -101,9 +118,57 @@ class BasicFunctionalityTest {
         for (ServiceReplica serviceReplica : serviceReplicas) {
             for (int i = 0; i < numOfAccounts; i++) {
                 serviceReplica.accountService.findPerson(i + "john" + i).ifPresent(account -> {
-                    assertEquals(5000, account.getBalance(), "Account balance is incorrect");
+                    assertEquals(500, account.getBalance(), "Account balance is incorrect");
                 });
             }
+        }
+    }
+
+    @Test
+    void onlyWithdrawls() {
+        int numOfAccounts = 10;
+        int numOfOperations = 100;
+
+        List<ServiceReplica> serviceReplicaStream = IntStream.range(0, 2).mapToObj(e -> {
+            BlockingQueue<Task> taskQueue = new LinkedBlockingDeque<>();
+
+            for (int i1 = 0; i1 < numOfAccounts; i1++) {
+                Account account = getAccount(e, i1, 10000);
+                taskQueue.add(new CreateAccount(account));
+                taskQueue.add(new Sleep(100));
+                for (int i = 0; i < numOfOperations; i++) {
+                    taskQueue.add(new WithdrawMoney(account.getName(), 100));
+                }
+            }
+            taskQueue.add(new End());
+
+            return new ServiceReplica(String.valueOf(e), taskQueue);
+        }).toList();
+
+        serviceReplicaStream.forEach(Thread::start);
+
+        while (serviceReplicaStream.stream().anyMatch(ServiceReplica::isRunning)) {
+            Thread.onSpinWait();
+        }
+
+        serviceReplicaStream.forEach(i -> {
+            i.accountRepo.persistence().values().forEach(e -> assertThat(e, BalanceMatcher.hasBalance(0L)));
+        });
+    }
+
+    @Test
+    void rollback() {
+        BlockingQueue<Task> taskBlockingQueue = new LinkedBlockingQueue<>();
+
+        taskBlockingQueue.add(new Transaction(Instant.now()));
+        taskBlockingQueue.add(new Transaction(Instant.now().minus(1000, ChronoUnit.MILLIS)));
+
+
+        ServiceReplica serviceReplica = new ServiceReplica("1", taskBlockingQueue);
+        serviceReplica.start();
+
+        while (serviceReplica.isRunning()) {
+            Thread.onSpinWait();
         }
     }
 
@@ -122,13 +187,6 @@ class BasicFunctionalityTest {
             if (i == 0) {
                 taskQueue.add(new CreateAccount("0john0", 50, getSimulatedDelay()));
             }
-            taskQueue.add(new Sleep(100));
-            taskQueue.add(new Sleep(100));
-            taskQueue.add(new Sleep(100));
-            taskQueue.add(new Sleep(100));
-            taskQueue.add(new Sleep(100));
-            taskQueue.add(new Sleep(100));
-            taskQueue.add(new Sleep(100));
             taskQueue.add(new Sleep(100));
             taskQueue.add(new WithdrawMoney("0john0", 50));
 
@@ -161,7 +219,7 @@ class BasicFunctionalityTest {
             BlockingQueue<Task> taskQueue = new LinkedBlockingQueue<>();
             taskQueue.add(new Sleep(100));
             fillTaskQueue(taskQueue, i, numOfReplicas, numOfAccounts);
-            return new ServiceReplica(String.valueOf(i), taskQueue);
+            return new ServiceReplica(String.valueOf(i + 1), taskQueue);
         }).toList();
 
         // start the service replicas
@@ -184,6 +242,11 @@ class BasicFunctionalityTest {
             for (Account account : actual) {
                 assertThat(list, hasItem(account));
             }
+            list.forEach(i -> {
+                String name = i.getName();
+                Account actualAccount = actual.stream().filter(l -> l.getName().equals(name)).findFirst().orElseThrow();
+                assertThat(i, BalanceMatcher.hasBalance(actualAccount.getBalance()));
+            });
         });
 
         List<List<String>> csvData = ThreadLocalProvider.getLog().stream().map(e ->
@@ -217,7 +280,7 @@ class BasicFunctionalityTest {
         }
     }
 
-    private static Account getAccount(int replicaNumber, int accountNumber, int balance) {
+    private static Account getAccount(long replicaNumber, int accountNumber, int balance) {
         return new Account(replicaNumber + "john" + accountNumber, balance);
     }
 
@@ -234,6 +297,34 @@ class BasicFunctionalityTest {
             }
         } catch (IOException e) {
             System.out.println("An error occurred while writing to the CSV file: " + e.getMessage());
+        }
+    }
+
+    public static class BalanceMatcher extends TypeSafeMatcher<Account> {
+
+        private final double expectedBalance;
+
+        public BalanceMatcher(double expectedBalance) {
+            this.expectedBalance = expectedBalance;
+        }
+
+        @Override
+        protected boolean matchesSafely(Account item) {
+            return item.getBalance() == expectedBalance;
+        }
+
+        @Override
+        public void describeTo(Description description) {
+            description.appendText("a account with balance ").appendValue(expectedBalance);
+        }
+
+        @Override
+        protected void describeMismatchSafely(Account item, Description mismatchDescription) {
+            super.describeMismatchSafely(item, mismatchDescription);
+        }
+
+        public static BalanceMatcher hasBalance(double expectedBalance) {
+            return new BalanceMatcher(expectedBalance);
         }
     }
 }

@@ -1,6 +1,8 @@
 package service_setup;
 
-public class InsufficientFundsException extends Exception {
+import ecd3.RepositoryException;
+
+public class InsufficientFundsException extends RepositoryException {
 
     public InsufficientFundsException(String message) {
         super(message);

@@ -12,7 +12,7 @@ import java.util.concurrent.ConcurrentSkipListSet;
 
 public class AccountRepo extends Repository<Account, String> {
 
-    private final ConcurrentHashMap<Version<String>, Account> multiVersionPersistence;
+    private final ConcurrentHashMap<Version, Account> multiVersionPersistence;
     private final ConcurrentHashMap<String, Account> persistence;
 
     public AccountRepo() {
@@ -21,7 +21,7 @@ public class AccountRepo extends Repository<Account, String> {
     }
 
     @Override
-    public ConcurrentHashMap<Version<String>, Account> multiVersionPersistence() {
+    public ConcurrentHashMap<Version, Account> multiVersionPersistence() {
         return multiVersionPersistence;
     }
 

@@ -1,19 +1,19 @@
 package ecd3;
 
-import ecd3.domain.Aggregate;
-import ecd3.util.CopyUtil;
-import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.Map;
 
 public class SnapshotImpl implements Snapshot {
 
-    private final Set<? extends Aggregate<?>> snapshot;
+    private final Map<String, Integer> snapshot;
 
-    public SnapshotImpl(Set<? extends Aggregate<?>> objects) {
-        snapshot = objects.stream().map(CopyUtil::deepCopy).collect(Collectors.toUnmodifiableSet());
+    public SnapshotImpl(Map<String, Integer> snapshot) {
+        this.snapshot = snapshot;
     }
 
-    public Set<? extends Aggregate<?>> get() {
+    public Map<String, Integer> get() {
+        if (snapshot == null) {
+            return Map.of();
+        }
         return snapshot;
     }
 }

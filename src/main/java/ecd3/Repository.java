@@ -3,31 +3,48 @@ package ecd3;
 import ecd3.domain.Aggregate;
 import ecd3.util.CopyUtil;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
-import java.util.concurrent.ConcurrentSkipListSet;
-import service_setup.ThreadLocalProvider;
+import java.util.stream.Collectors;
+import service_setup.AccountAllReadyExistsException;
+import service_setup.NoAccountFoundException;
 
 import java.io.Serializable;
-import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
 public abstract class Repository<E extends Aggregate<?>, F extends Serializable> {
 
-    public abstract ConcurrentHashMap<Version<F>, E> multiVersionPersistence();
+    public abstract ConcurrentHashMap<Version, E> multiVersionPersistence();
 
-    public abstract ConcurrentHashMap<F, E> persistence();
+    public abstract ConcurrentHashMap<String, E> persistence();
 
-    public abstract F getId(E aggregate);
+    public abstract String getId(E aggregate);
 
-    public abstract F getName(E aggregate);
+    public abstract String getName(E aggregate);
 
-    public void save(E aggregate) {
+    public void save(E aggregate) throws AccountAllReadyExistsException {
+        if (persistence().containsKey(getName(aggregate))) {
+            throw new AccountAllReadyExistsException("Account: " + getName(aggregate) + " already exists");
+        }
+        aggregate.incrementVersion();
         persistence().put(getName(aggregate), CopyUtil.deepCopy(aggregate));
-        multiVersionPersistence().put(new Version<F>(getId(aggregate), aggregate.getVersion()), CopyUtil.deepCopy(aggregate));
+        multiVersionPersistence().put(new Version(getId(aggregate), aggregate.getVersion()), CopyUtil.deepCopy(aggregate));
     }
 
-    public E findById(F id) {
+    public void delete(E aggregate) {
+        persistence().remove(getName(aggregate));
+        multiVersionPersistence().remove(new Version(getId(aggregate), aggregate.getVersion()));
+    }
+
+    public void update(E aggregate) throws NoAccountFoundException {
+        if (!persistence().containsKey(getName(aggregate))) {
+            throw new NoAccountFoundException("No Account with name: " + getName(aggregate) + " found");
+        }
+        aggregate.incrementVersion();
+        persistence().put(getName(aggregate), CopyUtil.deepCopy(aggregate));
+        multiVersionPersistence().put(new Version(getId(aggregate), aggregate.getVersion()), CopyUtil.deepCopy(aggregate));
+    }
+
+    public E findById(String id) {
         return persistence().values()
                 .stream()
                 .filter(aggregate1 -> getId(aggregate1).equals(id))
@@ -35,43 +52,56 @@ public abstract class Repository<E extends Aggregate<?>, F extends Serializable>
                 .orElseThrow(NoSuchElementException::new);
     }
 
-    public E findSpecificVersion(F id, int version) {
-        E aggregate = multiVersionPersistence().get(new Version<F>(id, version));
+    public Map<String, Integer> getSnapshotVersions() {
+        return persistence().values().stream().collect(Collectors.toMap(e -> e.getId(), e -> e.getVersion()));
+    }
+
+    public E findSpecificVersion(String id, int version) {
+        E aggregate = multiVersionPersistence().get(new Version(id, version));
         if (aggregate == null) {
             throw new NoSuchElementException();
         }
         return aggregate;
     }
 
-    public void delete(E aggregate) {
-        persistence().remove(getId(aggregate));
-        multiVersionPersistence().remove(new Version<F>(getId(aggregate), aggregate.getVersion()));
-    }
-
-    public void update(E aggregate) {
-        persistence().put(getName(aggregate), CopyUtil.deepCopy(aggregate));
-        aggregate.incrementVersion();
-        multiVersionPersistence().put(new Version<F>(getId(aggregate), aggregate.getVersion()), CopyUtil.deepCopy(aggregate));
-    }
-
-    public void rollbackTo(E deepCopyOfOldVersionOfAggregate, int version) {
-        deepCopyOfOldVersionOfAggregate.setVersion(version);
-        persistence().put(getName(deepCopyOfOldVersionOfAggregate), deepCopyOfOldVersionOfAggregate);
+    public void rollbackTo(String id, int version) {
+        E e = multiVersionPersistence().get(new Version(id, version));
+        if (e == null) {
+            return;
+        }
+        persistence().put(getName(e), CopyUtil.deepCopy(e));
         multiVersionPersistence().keySet()
-                .removeIf(key -> key.getAggregateId().equals(getId(deepCopyOfOldVersionOfAggregate)) && key.getVersion() > version);
+                .removeIf(key -> key.getAggregateId().equals(id) && key.getVersion() > version);
     }
 
-    public static class Version<F> {
+    public void rollbackToTransaction(Transaction first) {
+        Map<String, Integer> versionMap = first.getBotSnapShot().get();
+        versionMap.keySet().forEach(id -> rollbackTo(id, versionMap.get(id)));
 
-        private final F aggregateId;
+        first.getWriteSet().forEach(e -> {
+            if (persistence().containsKey(getName((E) e))) {
+                if (e.getVersion() == 0) {
+                    delete((E) e);
+                }
+//                } else {
+//                    Integer versionToRollbackTo = first.getBotSnapShot().get().get(e.getId());
+//                    rollbackTo(((E) e).getId(), versionToRollbackTo);
+//                }
+            }
+        });
+    }
+
+    public static class Version implements Comparable<Version> {
+
+        private final String aggregateId;
         private final int version;
 
-        public Version(F aggregateId, int version) {
+        public Version(String aggregateId, int version) {
             this.aggregateId = aggregateId;
             this.version = version;
         }
 
-        public F getAggregateId() {
+        public String getAggregateId() {
             return aggregateId;
         }
 
@@ -88,7 +118,7 @@ public abstract class Repository<E extends Aggregate<?>, F extends Serializable>
                 return false;
             }
 
-            Version<?> version1 = (Version<?>) o;
+            Version version1 = (Version) o;
             return version == version1.version && aggregateId.equals(version1.aggregateId);
         }
 
@@ -97,6 +127,15 @@ public abstract class Repository<E extends Aggregate<?>, F extends Serializable>
             int result = aggregateId.hashCode();
             result = 31 * result + version;
             return result;
+        }
+
+        @Override
+        public int compareTo(Version o) {
+            int idCompare = getAggregateId().compareTo(o.getAggregateId());
+            if (idCompare != 0) {
+                return idCompare;
+            }
+            return Long.compare(this.getVersion(), o.getVersion());
         }
     }
 }

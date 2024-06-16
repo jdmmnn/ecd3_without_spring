@@ -18,7 +18,7 @@ public class DepositMoney implements Task {
         try {
             accountService.depositMoney(name, amount);
         } catch (NoAccountFoundException e) {
-            throw new RuntimeException(e);
+            e.printStackTrace();
         }
     }
 }

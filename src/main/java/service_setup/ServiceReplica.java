@@ -10,6 +10,7 @@ import service_setup.testing.Task;
 
 public class ServiceReplica extends Thread {
 
+    public Long replicaId = -1l;
     private final AtomicBoolean isRunning = new AtomicBoolean(true);
     private final BlockingQueue<Task> taskQueue;
     public AccountRepo accountRepo;
@@ -27,17 +28,20 @@ public class ServiceReplica extends Thread {
 
     @Override
     public void run() {
-        long replicaId = ThreadLocalProvider.getReplicaId();
+        ThreadLocalProvider.reset();
+        replicaId = (long) ThreadLocalProvider.getReplicaId();
         ThreadLocalProvider.registerReplicaThread(replicaId, this);
-
+        ThreadLocalProvider.registerReplicaIdWithThread(replicaId, this);
         accountRepo = ThreadLocalProvider.getAccountRepo(replicaId);
         transactionManager = ThreadLocalProvider.getTransactionManager(replicaId);
         accountService = ThreadLocalProvider.getPersonService(replicaId);
+
 
         SynchronisationWorker synchronisationWorker = new SynchronisationWorker(
                 "SynchroReplica" + this.getName(),
                 replicaId
         );
+        ThreadLocalProvider.registerReplicaIdWithThread(replicaId, synchronisationWorker);
         synchronisationWorker.start();
 
         try {

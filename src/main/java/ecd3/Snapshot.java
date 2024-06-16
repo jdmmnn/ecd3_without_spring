@@ -1,9 +1,8 @@
 package ecd3;
 
-import ecd3.domain.Aggregate;
 import java.io.Serializable;
-import java.util.Set;
+import java.util.Map;
 
 public interface Snapshot extends Serializable {
-    Set<? extends Aggregate<?>> get();
+    Map<String, Integer> get();
 }

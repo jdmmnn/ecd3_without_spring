@@ -2,10 +2,8 @@ package service_setup;
 
 import ecd3.Transaction;
 import ecd3.TransactionManager;
-import ecd3.domain.Operation;
 import ecd3.domain.OperationEnum;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 
 public class AccountService {
@@ -22,7 +20,7 @@ public class AccountService {
         this.accountRepo = ThreadLocalProvider.getAccountRepo(replicaId);
     }
 
-    public Account createAccount(String name, double initialBalance) {
+    public void createAccount(String name, double initialBalance) {
         Transaction transaction = transactionManager.bot();
         Account account = new Account(name, initialBalance);
         account.logWriteOperation(transaction);
@@ -34,7 +32,6 @@ public class AccountService {
                 OperationEnum.CREATE,
                 Instant.now());
         transactionManager.commit(transaction);
-        return account;
     }
 
     // withdraw money from account
@@ -42,8 +39,6 @@ public class AccountService {
         Transaction transaction = transactionManager.bot();
         Account account = accountRepo.findByName(name).orElseThrow(() -> new NoAccountFoundException(name + " in " + accountRepo.persistence()));
         account.logReadOperation(transaction);
-        if (account.getBalance() < amount)
-            throw new InsufficientFundsException("Insufficient funds");
         account.logOperation(transaction, OperationEnum.WITHDRAW, account, amount);
         ThreadLocalProvider.log(ThreadLocalProvider.getReplicaId(),
                 account.getReplicaId(),
@@ -97,13 +92,12 @@ public class AccountService {
         transactionManager.commit(transaction);
     }
 
-    public void updatePerson(String id, String name, int newBalance) {
+    public void updatePerson(String id, String name, int newBalance) throws NoAccountFoundException {
         Transaction transaction = transactionManager.bot();
         Account account = accountRepo.findById(id);
         account.logReadOperation(transaction);
         account.setName(name);
         account.setBalance(newBalance);
-        accountRepo.save(account);
         account.logOperation(transaction, OperationEnum.UPDATE, account);
         ThreadLocalProvider.log(ThreadLocalProvider.getReplicaId(),
                 account.getReplicaId(),

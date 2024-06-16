@@ -8,8 +8,6 @@ import java.io.Serializable;
 
 public abstract class Aggregate<A> implements Serializable {
 
-    transient TransactionManager transactionManager = ThreadLocalProvider.getTransactionManager(Thread.currentThread().threadId());
-
     public String id;
 
     int version;
@@ -48,7 +46,7 @@ public abstract class Aggregate<A> implements Serializable {
 
     public void logWriteOperation(Transaction transaction) {
         // TODO: implement the write set mechanic
-        //transaction.logWriteOperation( this);
+        transaction.logWriteOperation( this);
     }
 
     public void logOperation(Transaction transaction, OperationEnum crud, Object... parameters) {

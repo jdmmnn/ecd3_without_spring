@@ -12,5 +12,8 @@ public interface TransactionManager {
 
         void rollback(Transaction transaction);
 
-        boolean consumeBuffer(AccountRepo repository, ConcurrentLinkedQueue<Transaction> deque, long replicaId);
+        boolean consumeBuffer();
+
+        boolean consumeBuffer(AccountRepo repository, ConcurrentLinkedQueue<Transaction> deque, long replicaId)
+                throws CanNotRollBackException;
 }

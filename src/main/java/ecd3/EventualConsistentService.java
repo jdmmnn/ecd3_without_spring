@@ -1,11 +1,16 @@
 package ecd3;
 
-import ecd3.Repository.Version;
 import ecd3.domain.Operation;
 import java.time.Instant;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NavigableSet;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentSkipListSet;
+import java.util.stream.Stream;
 import service_setup.Account;
+import service_setup.AccountAllReadyExistsException;
 import service_setup.AccountRepo;
 import service_setup.InsufficientFundsException;
 import service_setup.NoAccountFoundException;
@@ -15,12 +20,12 @@ public class EventualConsistentService {
 
     private final Long replicaId;
 
-    private static final int TRANSACTION_TAIL_REMAIN_TIME = 10000;
+    private static final int TRANSACTION_TAIL_REMAIN_TIME_MILLIS = 10000000;
     ConcurrentSkipListSet<Transaction> transactionTail;
 
     private final ConcurrentLinkedDeque<Transaction> transactionLog;
 
-    private final AccountRepo repo;
+    public final AccountRepo repo;
 
     public EventualConsistentService(
             Long replicaId) {
@@ -30,28 +35,8 @@ public class EventualConsistentService {
         this.repo = ThreadLocalProvider.getAccountRepo(replicaId);
     }
 
-    /*
-     * This method is called by the service replica to evaluate the transaction tail
-     * it will evaluate the transaction tail and apply the transactions to the repository as versioned objects
-     * it will reset the versions of the objects in case of a conflict and will apply the transactions in the correct order
-     * it will resolve the conflicts in case of multiple writes on the same object
-     */
-    public void evaluateTransactionTail() {
-        transactionTail.forEach(transaction -> {
-            transaction.getOperations().forEach(e -> {
-                try {
-                    evalOperation(e);
-                } catch (InsufficientFundsException | NoAccountFoundException | AccountAllReadyExistsException ex) {
-                    throw new RuntimeException(ex);
-                } finally {
-                    transaction.rollback();
-                }
-            });
-            if (transaction.getCommitTimeStamp() < Instant.now().toEpochMilli() - TRANSACTION_TAIL_REMAIN_TIME) {
-                transactionTail.remove(transaction);
-                transactionLog.add(transaction);
-            }
-        });
+    public void eval(Transaction transaction) {
+        transaction.getOperations().forEach(operation -> evaluateOperation(operation, transaction));
     }
 
     public void evalOperation(Operation e) throws InsufficientFundsException, NoAccountFoundException, AccountAllReadyExistsException {
@@ -64,15 +49,63 @@ public class EventualConsistentService {
         }
     }
 
+
+    public void addTransactionToTail(Transaction transaction) {
+        transactionTail.add(transaction);
+        if (transactionTail.last().getCommitTimeStamp().compareTo(transaction.getCommitTimeStamp()) > 0) {
+            Transaction lower = transactionTail.lower(transaction);
+            NavigableSet<Transaction> transactions;
+            if (lower != null) {
+                transactions = transactionTail.tailSet(lower, true);
+            } else {
+                transactions = transactionTail.tailSet(transaction, true);
+            }
+            transactions.descendingSet().forEach(repo::rollbackToTransaction);
+            transactions.forEach(this::eval);
+
+        } else {
+            eval(transaction);
+        }
+    }
+
+
+    public void evaluateOperation(Operation e, Transaction transaction) {
+        try {
+            evalOperation(e);
+        } catch (RepositoryException ex) {
+            transaction.rollback();
+            ex.printStackTrace();
+        }
+    }
+
+    public void rollback(Transaction transaction) throws CanNotRollBackException {
+        if (transactionLog.contains(transaction)) {
+            throw new CanNotRollBackException();
+        }
+        repo.rollbackToTransaction(transaction);
+        transactionTail.tailSet(transaction).forEach(this::eval);
+        transactionTail.remove(transaction);
+    }
+
+    public void cleanUpTransactionTail() {
+        for (Transaction transaction : transactionTail) {
+            Instant now = Instant.now().minusMillis(TRANSACTION_TAIL_REMAIN_TIME_MILLIS);
+            if (transaction.getCommitTimeStamp().compareTo(now) <= 0) {
+                transactionTail.remove(transaction);
+                transactionLog.add(transaction);
+            }
+        }
+    }
+
     private void create(Operation e) throws AccountAllReadyExistsException {
         Account account = (Account) e.args[0];
-        if (repo.persistence().containsKey(account.getName())) {
-            throw new AccountAllReadyExistsException("Account with name " + account.getName() + " already exists");
-        }
+//        if (repo.persistence().containsKey(account.getName())) {
+//            throw new AccountAllReadyExistsException("Account with name " + account.getName() + " already exists");
+//        }
         repo.save(account);
     }
 
-    private void update(Operation e) {
+    private void update(Operation e) throws NoAccountFoundException {
         for (Object arg : e.args) {
             repo.update((Account) arg);
         }
@@ -87,6 +120,7 @@ public class EventualConsistentService {
     private void withdraw(Operation e) throws InsufficientFundsException, NoAccountFoundException {
         Account account = (Account) e.args[0];
         double amount = (double) e.args[1];
+
         Account foundAccount = repo.findByName(account.getName())
                 .orElseThrow(() -> new NoAccountFoundException(account.getName() + " in " + repo.persistence()));
         if (foundAccount.getBalance() < amount) {
@@ -100,13 +134,14 @@ public class EventualConsistentService {
     private void deposit(Operation e) throws NoAccountFoundException {
         Account account = (Account) e.args[0];
         double amount = (double) e.args[1];
-        repo.findByName(account.getName()).orElseThrow(() -> new NoAccountFoundException(account.getName() + " in " + repo.persistence()));
-        account.setBalance(account.getBalance() + amount);
-        repo.update(account);
 
-    }
-
-    public void addTransactionToTail(Transaction transaction) {
-        transactionTail.add(transaction);
+        Account foundAccount = repo.findByName(account.getName())
+                .orElseThrow(() -> new NoAccountFoundException(account.getName() + " in " + repo.persistence()));
+        if (foundAccount.getBalance() + amount < 0) {
+            throw new InsufficientFundsException("insuficient funds for account: " + foundAccount.getName());
+        } else {
+            foundAccount.setBalance(account.getBalance() + amount);
+            repo.update(foundAccount);
+        }
     }
 }

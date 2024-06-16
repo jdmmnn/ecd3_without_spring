@@ -1,46 +1,35 @@
 package service_setup;
 
+import ecd3.CanNotRollBackException;
+import ecd3.EventualConsistentService;
 import ecd3.Transaction;
 import ecd3.TransactionManager;
 import ecd3.propa.MessageBuffer;
+import java.util.concurrent.BlockingDeque;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentSkipListSet;
 
 public class SynchronisationWorker extends Thread {
 
     public final Long replicaId;
-    public final ServiceReplica serviceReplica;
-    public final AccountRepo accountRepo;
     public final TransactionManager transactionManager;
-    public final ConcurrentLinkedQueue<Transaction> buffer;
-    public final ConcurrentSkipListSet<Transaction> transactionTail;
+    public final EventualConsistentService eventualConsistentService;
 
     public SynchronisationWorker(
             String name,
             long replicaId) {
         super(name);
-        this.serviceReplica = ThreadLocalProvider.getReplicaThread(replicaId);
         this.replicaId = replicaId;
-        this.accountRepo = ThreadLocalProvider.getAccountRepo(replicaId);
         this.transactionManager = ThreadLocalProvider.getTransactionManager(replicaId);
-        this.buffer = MessageBuffer.registerOrGet(replicaId);
-        this.transactionTail = ThreadLocalProvider.getTransactionTail(replicaId);
+        eventualConsistentService = ThreadLocalProvider.getEventualConsistentService(replicaId);
     }
 
     @Override
     public void run() {
-        int count = 0;
-        while ((serviceReplica.isRunning() && !transactionTail.isEmpty()) || (serviceReplica.isRunning() && count < 1000)) {
-            if (!transactionManager.consumeBuffer(accountRepo, buffer, replicaId)) {
-                count++;
-            } else {
-                count = 0;
-            }
-            try {
-                sleep(100);
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            }
+        boolean running = true;
+        while (running) {
+            running = transactionManager.consumeBuffer();
+            eventualConsistentService.cleanUpTransactionTail();
         }
     }
 }
