@@ -25,6 +25,9 @@ import java.util.stream.Stream;
 import org.hamcrest.Description;
 import org.hamcrest.TypeSafeMatcher;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import service_setup.ThreadLocalProvider;
 import service_setup.testing.CreateAccount;
 import service_setup.Account;
@@ -66,10 +69,42 @@ class BasicFunctionalityTest {
         }
     }
 
+    @ParameterizedTest
+    @MethodSource("provideParametersForBenchmark")
+    void runIsolatedBenchmark(int numOfReplicas, int numOfAccounts) {
+        long benchmark = benchmark(numOfReplicas, numOfAccounts);
+        System.out.println("Benchmark took " + benchmark + " seconds");
+    }
+
+    private static Stream<Arguments> provideParametersForBenchmark() {
+        return Stream.of(
+                Arguments.of(1, 10),
+                Arguments.of(2, 10),
+                Arguments.of(3, 10),
+                Arguments.of(4, 10),
+                Arguments.of(5, 10),
+                Arguments.of(6, 10),
+                Arguments.of(7, 10),
+                Arguments.of(8, 10),
+                Arguments.of(9, 10),
+                Arguments.of(10, 10)
+//                Arguments.of(5, 10),
+//                Arguments.of(5, 20),
+//                Arguments.of(5, 30),
+//                Arguments.of(10, 10),
+//                Arguments.of(10, 20),
+//                Arguments.of(10, 30),
+//                Arguments.of(15, 10),
+//                Arguments.of(15, 20),
+//                Arguments.of(15, 30)
+                // add more combinations if needed
+                        );
+    }
+
     // run one isolated benchnark with 5 replicas and 100 persons
     @Test
-    void runIsolatedBenchmark() {
-        long benchmark = benchmark(10, 20);
+    void runIsolatedBenchmark1() {
+        long benchmark = benchmark(9, 100);
         System.out.println("Benchmark took " + benchmark + " seconds");
     }
 
@@ -78,7 +113,7 @@ class BasicFunctionalityTest {
         // Define the number of accounts, operations, and replicas
         int numOfAccounts = 2;
         int numOfOperations = 10;
-        int numOfReplicas = 2;
+        int numOfReplicas = 3;
 
         // Create a list of service replicas
         List<ServiceReplica> serviceReplicas = IntStream.range(0, numOfReplicas).mapToObj(i -> {
@@ -226,9 +261,13 @@ class BasicFunctionalityTest {
         serviceReplicas.forEach(Thread::start);
 
         // wait for the service replicas to finish
-        while (serviceReplicas.stream().anyMatch(ServiceReplica::isRunning)) {
-            Thread.onSpinWait();
-        }
+        serviceReplicas.forEach(e -> {
+            try {
+                e.join();
+            } catch (InterruptedException ex) {
+                throw new RuntimeException(ex);
+            }
+        });
         Instant end = Instant.now();
 
         List<Account> actual = IntStream.range(0, numOfReplicas)
@@ -239,6 +278,7 @@ class BasicFunctionalityTest {
         // assert that all serviceReplicas contain all the same persons in any order at the end of execution
         serviceReplicas.forEach(e -> {
             List<Account> list = e.accountService.accountRepo.persistence().values().stream().sorted().toList();
+
             for (Account account : actual) {
                 assertThat(list, hasItem(account));
             }
@@ -267,17 +307,16 @@ class BasicFunctionalityTest {
     }
 
     private static void fillTaskQueue(BlockingQueue<Task> taskQueue, int replicaNumber, int numOfReplicas, int numOfPersons) {
-        taskQueue.add(new Sleep(1000));
         for (int i = 0; i < numOfPersons; i++) {
             taskQueue.add(new CreateAccount(
                     getAccount(replicaNumber, i, 0).getName(), getAccount(replicaNumber, i, 0).getBalance(), getSimulatedDelay()
             ));
-            taskQueue.add(new Sleep(100));
         }
         int i = numOfReplicas * numOfPersons;
         for (int i1 = 0; i1 < i; i1++) {
             taskQueue.add(new Sleep(10));
         }
+        taskQueue.add(new End());
     }
 
     private static Account getAccount(long replicaNumber, int accountNumber, int balance) {
@@ -286,7 +325,7 @@ class BasicFunctionalityTest {
 
     private static int getSimulatedDelay() {
         //return 0;
-        return new Random().nextInt(0, 5);
+        return 10;
     }
 
     private void writeCsvFile(List<List<String>> csvData, String path, boolean append) {

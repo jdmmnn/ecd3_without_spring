@@ -2,6 +2,7 @@ package service_setup;
 
 import ecd3.Transaction;
 import ecd3.TransactionManager;
+import ecd3.propa.MessageBuffer;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -29,6 +30,13 @@ public class ServiceReplica extends Thread {
     @Override
     public void run() {
         ThreadLocalProvider.reset();
+        MessageBuffer.reset();
+        System.gc();
+        try {
+            sleep(100);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
         replicaId = (long) ThreadLocalProvider.getReplicaId();
         ThreadLocalProvider.registerReplicaThread(replicaId, this);
         ThreadLocalProvider.registerReplicaIdWithThread(replicaId, this);
@@ -56,11 +64,11 @@ public class ServiceReplica extends Thread {
                 e.printStackTrace();
             }
         }
-        isRunning.set(false);
         try {
-            synchronisationWorker.join();
+            synchronisationWorker.join(0,0);
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
+        isRunning.set(false);
     }
 }

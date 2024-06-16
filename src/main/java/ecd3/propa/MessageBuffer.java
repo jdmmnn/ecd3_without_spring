@@ -30,4 +30,8 @@ public class MessageBuffer {
 //            }
         });
     }
+
+    public static void reset() {
+        buffers.clear();
+    }
 }

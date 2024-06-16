@@ -27,8 +27,12 @@ public class SynchronisationWorker extends Thread {
     @Override
     public void run() {
         boolean running = true;
-        while (running) {
+        int count = 0;
+        while (running || count <= 5) {
             running = transactionManager.consumeBuffer();
+            if (!running) {
+                count++;
+            }
             eventualConsistentService.cleanUpTransactionTail();
         }
     }

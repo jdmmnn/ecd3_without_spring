@@ -10,6 +10,7 @@ import service_setup.NoAccountFoundException;
 import java.io.Serializable;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import service_setup.ThreadLocalProvider;
 
 public abstract class Repository<E extends Aggregate<?>, F extends Serializable> {
 
@@ -23,9 +24,9 @@ public abstract class Repository<E extends Aggregate<?>, F extends Serializable>
 
     public void save(E aggregate) throws AccountAllReadyExistsException {
         if (persistence().containsKey(getName(aggregate))) {
-            throw new AccountAllReadyExistsException("Account: " + getName(aggregate) + " already exists");
+            Long replicaIdByThread = ThreadLocalProvider.getReplicaIdByThread(Thread.currentThread());
+            throw new AccountAllReadyExistsException("Account: " + getName(aggregate) + " already exists in replica " + replicaIdByThread);
         }
-        aggregate.incrementVersion();
         persistence().put(getName(aggregate), CopyUtil.deepCopy(aggregate));
         multiVersionPersistence().put(new Version(getId(aggregate), aggregate.getVersion()), CopyUtil.deepCopy(aggregate));
     }
@@ -82,11 +83,12 @@ public abstract class Repository<E extends Aggregate<?>, F extends Serializable>
             if (persistence().containsKey(getName((E) e))) {
                 if (e.getVersion() == 0) {
                     delete((E) e);
+                } else {
+                    Integer versionToRollbackTo = first.getBotSnapShot().get().get(e.getId());
+                    if (versionToRollbackTo != null) {
+                        rollbackTo(((E) e).getId(), versionToRollbackTo);
+                    }
                 }
-//                } else {
-//                    Integer versionToRollbackTo = first.getBotSnapShot().get().get(e.getId());
-//                    rollbackTo(((E) e).getId(), versionToRollbackTo);
-//                }
             }
         });
     }

@@ -5,6 +5,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.BlockingDeque;
+import java.util.concurrent.TimeUnit;
 import service_setup.AccountRepo;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -77,11 +78,15 @@ public class TransactionManagerImpl implements TransactionManager {
     @Override
     public boolean consumeBuffer() {
         try {
-            Transaction transaction = buffer.take();
-            if (transaction.isRollback()) {
-                eventualConsistentService.rollback(transaction);
+            Transaction transaction = buffer.poll(100, TimeUnit.MILLISECONDS);
+            if (transaction != null) {
+                if (transaction.isRollback()) {
+                    eventualConsistentService.rollback(transaction);
+                } else {
+                    eventualConsistentService.addTransactionToTail(transaction);
+                }
             } else {
-                eventualConsistentService.addTransactionToTail(transaction);
+                return false;
             }
         } catch (InterruptedException | CanNotRollBackException e) {
             throw new RuntimeException(e);

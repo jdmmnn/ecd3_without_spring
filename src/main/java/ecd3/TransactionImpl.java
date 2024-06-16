@@ -44,10 +44,8 @@ public class TransactionImpl implements Transaction {
     public void rollback() {
         this.rollback = true;
         Long replicaIdByThread = ThreadLocalProvider.getReplicaIdByThread(Thread.currentThread());
-        if (!replicaId.equals(replicaIdByThread)) {
-            MessageBuffer.broadcast(replicaId, this);
-            System.err.println("rollback of transaction " + this.getId() + " by replica " + replicaIdByThread);
-        }
+        MessageBuffer.broadcast(replicaId, this);
+        System.err.println("rollback of transaction " + this.getId() + " by replica " + replicaIdByThread);
     }
 
     @Override

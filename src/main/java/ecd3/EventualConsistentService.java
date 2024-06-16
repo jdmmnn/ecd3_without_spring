@@ -82,7 +82,7 @@ public class EventualConsistentService {
         if (transactionLog.contains(transaction)) {
             throw new CanNotRollBackException();
         }
-        repo.rollbackToTransaction(transaction);
+        transactionTail.tailSet(transaction, true).descendingSet().forEach(repo::rollbackToTransaction);
         transactionTail.tailSet(transaction).forEach(this::eval);
         transactionTail.remove(transaction);
     }
@@ -99,9 +99,6 @@ public class EventualConsistentService {
 
     private void create(Operation e) throws AccountAllReadyExistsException {
         Account account = (Account) e.args[0];
-//        if (repo.persistence().containsKey(account.getName())) {
-//            throw new AccountAllReadyExistsException("Account with name " + account.getName() + " already exists");
-//        }
         repo.save(account);
     }
 
@@ -140,7 +137,7 @@ public class EventualConsistentService {
         if (foundAccount.getBalance() + amount < 0) {
             throw new InsufficientFundsException("insuficient funds for account: " + foundAccount.getName());
         } else {
-            foundAccount.setBalance(account.getBalance() + amount);
+            foundAccount.setBalance(foundAccount.getBalance() + amount);
             repo.update(foundAccount);
         }
     }

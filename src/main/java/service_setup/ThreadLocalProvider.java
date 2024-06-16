@@ -55,7 +55,10 @@ public class ThreadLocalProvider {
     }
 
     public static void reset() {
-
+        personRepos.values().forEach(e -> {
+            e.multiVersionPersistence().clear();
+            e.persistence().clear();
+        });
         personRepos.clear();
         personServices.clear();
         transactionManagers.clear();
